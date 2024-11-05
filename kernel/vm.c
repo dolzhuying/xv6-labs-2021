@@ -78,23 +78,23 @@ kvminithart()
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
 pte_t *
-walk(pagetable_t pagetable, uint64 va, int alloc)
+walk(pagetable_t pagetable, uint64 va, int alloc)//分页表查找，用于虚拟地址到物理地址的映射
 {
-  if(va >= MAXVA)
+  if(va >= MAXVA)//虚拟地址超过地址空间，报错
     panic("walk");
 
-  for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
-    if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+  for(int level = 2; level > 0; level--) {//页表三级，向下
+    pte_t *pte = &pagetable[PX(level, va)];//获取当前层级的页表项，PX宏用于计算虚拟地址在当前层级中的索引
+    if(*pte & PTE_V) {//检查有效位
+      pagetable = (pagetable_t)PTE2PA(*pte);//如果页表项有效，使用 PTE2PA 宏将页表项转换为物理地址，并将其作为新的页表指针，进入下一层查找
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)//若无页表项，尝试分配新页表，分配失败则返回空指针，表示查找失败
         return 0;
-      memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
+      memset(pagetable, 0, PGSIZE);//分配成功则初始化
+      *pte = PA2PTE(pagetable) | PTE_V;//更新页表项：将新页表的物理地址（通过 PA2PTE 转换）和有效位设置到当前页表项
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)];//返回最底层页表项的指针
 }
 
 // Look up a virtual address, return the physical address,
@@ -344,23 +344,23 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
 int
-copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
+copyout(pagetable_t pagetable, uint64 dstva/*目标虚拟地址*/, char *src/*内核态的数据传输起始地址*/, uint64 len/*要复制的字节数*/)
 {
   uint64 n, va0, pa0;
 
-  while(len > 0){
-    va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+  while(len > 0){//要复制的字节数
+    va0 = PGROUNDDOWN(dstva);//目标虚拟地址的页起始地址
+    pa0 = walkaddr(pagetable, va0);//虚拟地址对应的物理地址
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (dstva - va0);
-    if(n > len)
+    n = PGSIZE - (dstva - va0);//当前页剩余的字节数
+    if(n > len)//剩余字节数大于要拷贝的数据则赋值
       n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+    memmove((void *)(pa0 + (dstva - va0)), src, n);//将n字节数据复制到用户地址空间的dstva，这里的是经过计算的物理地址
 
-    len -= n;
-    src += n;
-    dstva = va0 + PGSIZE;
+    len -= n;//要拷贝字节数减去n
+    src += n;//要传输的数据的起始地址偏移n
+    dstva = va0 + PGSIZE;//下一页起始地址
   }
   return 0;
 }

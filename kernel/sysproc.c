@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,30 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void){
+  int mask;
+  if(argint(0,&mask)<0){
+    return -1;
+  }
+  myproc()->syscall_trace=mask;
+  return 0;
+}
+
+uint64 
+sys_sysinfo(void){
+  uint64 addr;
+  if(argaddr(0,&addr)<0){//将用户程序中的sysinfo系统调用接口的info的地址绑定到addr，info指向的是用户进程空间中的地址
+    return -1;
+  }
+  struct sysinfo sinfo;
+  sinfo.freemem=count_left_memory();
+  sinfo.nproc=count_processes();
+  if(copyout(myproc()->pagetable,addr,(char*)&sinfo,sizeof(sinfo))<0){//将内核函数内定义的sinfo的信息拷贝到用户进程地址空间的addr
+    return -1;
+  }
+  return 0;
+
 }

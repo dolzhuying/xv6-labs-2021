@@ -71,12 +71,30 @@ kalloc(void)
   struct run *r;
 
   acquire(&kmem.lock);
-  r = kmem.freelist;
+  r = kmem.freelist;//空闲页根节点
   if(r)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  return (void*)r;// 把空闲页链表的根节点返回出去，作为内存页使用
 }
+/*xv6 中，空闲内存页的记录方式是，将空虚内存页本身直接用作链表节点，形成一个空闲页链表，每次需要分配，
+就把链表根部对应的页分配出去。每次需要回收，就把这个页作为新的根节点，把原来的 freelist 链表接到后面*/
+
+uint64 count_left_memory(void){//计算系统剩余内存量
+  acquire(&kmem.lock);//先上锁，防止对freelist的竞争访问
+  uint64 left_mem=0;
+  struct run*r;
+  r=kmem.freelist;//空闲页链表的根节点
+  while(r){
+    left_mem+=PGSIZE;//空闲页数量乘以pagesize
+    r=r->next;
+  }
+  release(&kmem.lock);
+  return left_mem;
+
+}
+
+
