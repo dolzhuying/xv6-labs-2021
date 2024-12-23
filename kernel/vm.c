@@ -19,6 +19,8 @@ extern char trampoline[]; // trampoline.S
 pagetable_t
 kvmmake(void)
 {
+  /*Kvmmake首先分配一个物理内存页来保存根页表页
+  然后它调用kvmmap来安装内核需要的翻译,翻译包括内核的指令和数据，物理内存到PHYSTOP，以及实际上是设备的内存范围*/
   pagetable_t kpgtbl;
 
   kpgtbl = (pagetable_t) kalloc();
@@ -135,7 +137,7 @@ kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
 int
-mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)//pagetable当前进程的页表，perm访问权限
 {
   uint64 a, last;
   pte_t *pte;
@@ -144,14 +146,18 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     panic("mappages: size");
   
   a = PGROUNDDOWN(va);
-  last = PGROUNDDOWN(va + size - 1);
+  last = PGROUNDDOWN(va + size - 1);//末尾页的起始地址
   for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
+    if((pte = walk(pagetable, a, 1)) == 0)//页表项指针，如果该地址尚未映射过（没有对应页表项）返回NULL（返回的是页表项地址而不是物理地址）
       return -1;
     if(*pte & PTE_V)
+    /*检查页表项中的 PTE_V 位（有效位），如果该位为 1，
+    表示该虚拟地址已经被映射到物理地址。如果已经映射过，再次映射同一地址是非法的*/
       panic("mappages: remap");
-    *pte = PA2PTE(pa) | perm | PTE_V;
-    if(a == last)
+    *pte = PA2PTE(pa) | perm | PTE_V;//将物理地址 pa 转化成页表项设置到页表中，设置va，pa对应关系，并设置相应权限和有效位
+    /*将 PA2PTE(pa)、perm 和 PTE_V 三个部分按位 OR 操作，
+    最终得到页表项的完整值，表示虚拟地址 a 映射到物理地址 pa，并且具有相应的权限*/
+    if(a == last)//检查是否已经映射完所有页
       break;
     a += PGSIZE;
     pa += PGSIZE;
@@ -172,13 +178,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0)//未找到页表项
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0)//页表项未映射
       panic("uvmunmap: not mapped");
-    if(PTE_FLAGS(*pte) == PTE_V)
+    if(PTE_FLAGS(*pte) == PTE_V)//非叶子节点，即非映射到实际物理地址的页表项，只是索引
       panic("uvmunmap: not a leaf");
-    if(do_free){
+    if(do_free){//dofree指示是否需要在解除映射后释放物理内存，如果为 1，则会释放相应的物理页面；
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
@@ -279,6 +285,32 @@ freewalk(pagetable_t pagetable)
     }
   }
   kfree((void*)pagetable);
+}
+
+//大体结构与freewalk相似，参考riscv.h和
+void 
+vmprint(pagetable_t pagetable,uint64 dep){//接收参数：pagetable_t为uint64的别名，参数为页表的物理地址，dep为当前页表的层级
+  if(dep==0){
+    printf("page table %p",pagetable);
+  }
+  if(dep>2)return;//已经超过第三层页表，返回
+   for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];//获取页表项（pte_t是对uint64的别名）
+    if(pte&PTE_V){//只对有效的页表项进行操作
+      printf(".. ");
+      for(int j=0;j<dep;j++){
+        printf(".. ");//根据层级来打印..
+      }
+      printf("%d:pte %p pa %p",i,pte,PTE2PA(pte));//打印虚拟地址和物理地址，这里PTE2PA是宏定义，用于将页表项映射为物理地址
+
+      /*当页表项没有设置任何读、写或执行权限时，通常意味着该页表项并不是指向一个实际的物理内存页，而是指向下一级的页表的指针*/
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0){ // 如果页表项没有设置读/写/执行权限
+      uint64 child = PTE2PA(pte);//获取页表项指向的物理地址
+      vmprint((pagetable_t)child,dep+1);//遍历下一层页表
+    }
+    }
+  }
+  kfree((void*)pagetable);// 释放当前页表的内存
 }
 
 // Free user memory pages,
@@ -432,3 +464,5 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+
