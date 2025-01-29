@@ -200,6 +200,18 @@ w_pmpaddr0(uint64 x)
 
 // supervisor address translation and protection;
 // holds the address of the page table.
+
+//The GCC compiler stores the frame pointer of the currently executing function in the register s0
+//traps lab 添加
+static inline uint64
+r_fp()
+{
+  uint64 x;
+  asm volatile("mv %0, s0" : "=r" (x) );
+  return x;
+}
+
+
 static inline void 
 w_satp(uint64 x)
 {

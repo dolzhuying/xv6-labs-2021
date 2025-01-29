@@ -121,13 +121,25 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
 }
 
-void
-printfinit(void)
+void backtrace(){
+  printf("backtrace:\n");
+  uint64 fp=r_fp();//获取当前栈指针
+  uint64 page_start=PGROUNDDOWN(fp);//栈帧所在页的边界
+  uint64 page_end=PGROUNDUP(fp);
+  while(page_start<=fp&&fp<=page_end){
+    uint64 ra=*(uint64*)(fp-8);//当前栈帧的返回地址，注意是栈帧里存储了返回地址，fp-8只是栈帧中ra的内存地址，解引用才是ra的值
+    fp=*(uint64*)(fp-16);//旧栈帧的指针
+    printf("%p\n",ra);
+  }
+}
+
+void printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
